@@ -15,7 +15,13 @@ interface ChartPointWithTs extends ChartPoint {
 }
 
 export function useSensorData(path: string = '/sensor') {
-  const [data, setData] = useState<SensorData | null>(null);
+  const [data, setData] = useState<SensorData>({
+    tegangan_bst: 0,
+    adc_ads1115: 0,
+    lux_bh1750: 0,
+    status_cahaya: 'Offline',
+    timestamp: 0,
+  });
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +41,6 @@ export function useSensorData(path: string = '/sensor') {
       (snapshot) => {
         const val = snapshot.val() as SensorData | null;
         if (val) {
-          // Selalu pakai waktu nyata dari browser
           const now = Date.now();
           const timeLabel = formatTime(now);
 
@@ -56,10 +61,18 @@ export function useSensorData(path: string = '/sensor') {
             lux: luxHistory.current.map(({ time, value }) => ({ time, value })),
           });
 
-          // Override timestamp dengan waktu browser yang benar
           setData({ ...val, timestamp: now });
           setConnected(true);
           setError(null);
+        } else {
+          setData({
+            tegangan_bst: 0,
+            adc_ads1115: 0,
+            lux_bh1750: 0,
+            status_cahaya: 'Offline',
+            timestamp: 0,
+          });
+          setConnected(false);
         }
       },
       (err) => {

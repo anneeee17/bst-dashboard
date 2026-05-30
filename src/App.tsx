@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Zap, BarChart2, Sun, Moon, Download, Wifi, WifiOff, Clock, Trash2 } from 'lucide-react';
+import { Activity, Zap, Sun, Moon, Download, Wifi, WifiOff, Clock, Trash2, Lightbulb } from 'lucide-react';
 import { useSensorData } from './hooks/useSensorData';
 import ConnectionStatus from './components/ConnectionStatus';
 import {
@@ -30,13 +30,7 @@ const MAX_HISTORY = 50;
 function formatTimestampFull(ts: number): string {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, '0');
-  const day = pad(d.getDate());
-  const month = pad(d.getMonth() + 1);
-  const year = d.getFullYear();
-  const hour = pad(d.getHours());
-  const min = pad(d.getMinutes());
-  const sec = pad(d.getSeconds());
-  return `${day}/${month}/${year} ${hour}:${min}:${sec}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function CombinedChart({ luxData, teganganData, darkMode }: {
@@ -72,8 +66,8 @@ function CombinedChart({ luxData, teganganData, darkMode }: {
           {
             label: 'Tegangan BST (mV)',
             data: teganganData.map((d) => d.value),
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245,158,11,0.10)',
+            borderColor: '#378ADD',
+            backgroundColor: 'rgba(55,138,221,0.10)',
             borderWidth: 2,
             pointRadius: 2,
             pointHoverRadius: 5,
@@ -117,9 +111,9 @@ function CombinedChart({ luxData, teganganData, darkMode }: {
           yTeg: {
             type: 'linear',
             position: 'right',
-            ticks: { font: { size: 10 }, color: '#f59e0b' },
+            ticks: { font: { size: 10 }, color: '#378ADD' },
             grid: { drawOnChartArea: false },
-            title: { display: true, text: 'Tegangan (mV)', color: '#f59e0b', font: { size: 11 } },
+            title: { display: true, text: 'Tegangan (mV)', color: '#378ADD', font: { size: 11 } },
           },
         },
       },
@@ -147,7 +141,21 @@ export default function App() {
 
   const { data, connected, error, histories } = useSensorData('/sensor');
 
-  // Live clock
+  const teganganValues = history.map(h => h.tegangan_bst);
+  const minTegangan = teganganValues.length > 0 ? Math.round(Math.min(...teganganValues)) : null;
+  const maxTegangan = teganganValues.length > 0 ? Math.round(Math.max(...teganganValues)) : null;
+
+  const teganganRangeMin = 900;
+  const teganganRangeMax = 1300;
+  const teganganPct = data
+    ? Math.min(100, Math.max(0, ((Math.round(data.tegangan_bst) - teganganRangeMin) / (teganganRangeMax - teganganRangeMin)) * 100))
+    : 0;
+
+  const luxRangeMax = 1000;
+  const luxPct = data
+    ? Math.min(100, Math.max(0, (Math.round(data.lux_bh1750) / luxRangeMax) * 100))
+    : 0;
+
   useEffect(() => {
     const tick = () => setClock(formatTimestampFull(Date.now()));
     tick();
@@ -155,7 +163,6 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Append to history on new data
   useEffect(() => {
     if (!data) return;
     const ts = data.timestamp ?? Date.now();
@@ -182,11 +189,14 @@ export default function App() {
   const subText = darkMode ? 'text-slate-400' : 'text-gray-500';
   const headerBg = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-100';
 
-  // Export PDF
+  const isTerangNow = data?.status_cahaya?.toLowerCase().includes('terang') ||
+    data?.status_cahaya?.toLowerCase().includes('siang') ||
+    data?.status_cahaya?.toLowerCase().includes('cerah');
+  const statusIcon = isTerangNow ? '☀️' : '🌑';
+
   const exportPDF = async () => {
     if (history.length === 0 && !data) return;
 
-    // Dynamically load jsPDF + autoTable from CDN
     const script1 = document.createElement('script');
     script1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
     document.head.appendChild(script1);
@@ -200,42 +210,37 @@ export default function App() {
     const { jsPDF } = (window as any).jspdf;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-    // Header
     doc.setFontSize(18);
-    doc.setTextColor(6, 182, 212);
+    doc.setTextColor(55, 138, 221);
     doc.text('BST Sensor Monitor - Laporan Data', 14, 18);
-
     doc.setFontSize(10);
     doc.setTextColor(100, 116, 139);
     doc.text(`Diekspor pada: ${formatTimestampFull(Date.now())}`, 14, 26);
     doc.text(`Total Data: ${history.length} entri`, 14, 32);
 
-    // Current data box
     if (data) {
       doc.setFontSize(11);
       doc.setTextColor(30, 30, 30);
       doc.text('Data Terkini:', 14, 42);
       doc.setFontSize(10);
       doc.setTextColor(80, 80, 80);
-      doc.text(`Tegangan BST: ${data.tegangan_bst} mV   |   Lux BH1750: ${data.lux_bh1750} lx   |   ADC ADS1115: ${data.adc_ads1115}   |   Status: ${data.status_cahaya}`, 14, 49);
+      doc.text(`Tegangan BST: ${Math.round(data.tegangan_bst)} mV   |   Lux BH1750: ${Math.round(data.lux_bh1750)} lx   |   Status: ${data.status_cahaya}`, 14, 49);
     }
 
-    // Table
     const rows = history.map((h, i) => [
       i + 1,
       h.timestampFull,
       h.status_cahaya,
-      `${h.lux_bh1750} lx`,
-      `${h.tegangan_bst} mV`,
-      h.adc_ads1115,
+      `${Math.round(h.lux_bh1750)} lx`,
+      `${Math.round(h.tegangan_bst)} mV`,
     ]);
 
     (doc as any).autoTable({
       startY: 55,
-      head: [['No', 'Timestamp', 'Status Cahaya', 'Lux BH1750', 'Tegangan BST', 'ADC ADS1115']],
+      head: [['No', 'Timestamp', 'Status Cahaya', 'Lux BH1750', 'Tegangan BST']],
       body: rows,
       styles: { fontSize: 9, cellPadding: 3 },
-      headStyles: { fillColor: [6, 182, 212], textColor: 255, fontStyle: 'bold' },
+      headStyles: { fillColor: [55, 138, 221], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [245, 247, 250] },
       columnStyles: {
         0: { cellWidth: 10, halign: 'center' },
@@ -243,7 +248,6 @@ export default function App() {
         2: { cellWidth: 35 },
         3: { cellWidth: 30, halign: 'right' },
         4: { cellWidth: 35, halign: 'right' },
-        5: { cellWidth: 30, halign: 'right' },
       },
     });
 
@@ -258,10 +262,6 @@ export default function App() {
     doc.save(`BST_Report_${formatTimestampFull(Date.now()).replace(/[/:]/g, '-')}.pdf`);
   };
 
-  const statusIcon = data?.status_cahaya?.toLowerCase().includes('terang') ||
-    data?.status_cahaya?.toLowerCase().includes('siang') ||
-    data?.status_cahaya?.toLowerCase().includes('cerah') ? '☀️' : '🌑';
-
   return (
     <div className={`${bg} min-h-screen transition-all duration-300`}>
       {/* HEADER */}
@@ -269,8 +269,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-cyan-500/10 rounded-xl">
-                <Activity className="w-6 h-6 text-cyan-400" />
+              <div className="p-2 bg-blue-500/10 rounded-xl">
+                <Activity className="w-6 h-6 text-blue-400" />
               </div>
               <div>
                 <h1 className="text-xl font-bold">BST Sensor Monitor</h1>
@@ -278,18 +278,15 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Live clock */}
               <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg ${darkMode ? 'bg-slate-800' : 'bg-gray-100'} font-mono text-xs`}>
-                <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                <Clock className="w-3.5 h-3.5 text-blue-400" />
                 <span>{clock}</span>
               </div>
-              {/* Connection */}
               <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
                 ${connected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                 {connected ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
                 {connected ? 'Live' : 'Offline'}
               </div>
-              {/* Export PDF */}
               <button
                 onClick={exportPDF}
                 disabled={history.length === 0 && !data}
@@ -298,7 +295,6 @@ export default function App() {
                 <Download className="w-3.5 h-3.5" />
                 Export PDF
               </button>
-              {/* Dark mode */}
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className={`p-2 rounded-lg ${darkMode ? 'bg-slate-800 text-yellow-300' : 'bg-gray-200 text-gray-700'} transition`}
@@ -312,44 +308,91 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-        {/* ═══ HERO: TEGANGAN BST ═══ */}
-        <div className="rounded-3xl overflow-hidden shadow-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-400 p-8 text-white relative">
-          <div className="absolute inset-0 opacity-10"
-            style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, white 0%, transparent 60%)' }} />
-          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <Zap className="w-8 h-8" />
-                <span className="uppercase tracking-widest text-sm font-semibold text-blue-100">Tegangan BST</span>
+        {/* HERO: SPLIT PANEL */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className={`${cardBg} border-l-4 border-l-blue-500 border-t border-r border-b rounded-r-2xl rounded-l-none p-6`}>
+            <div className={`flex items-center gap-2 text-xs uppercase tracking-wider ${subText} mb-3`}>
+              <Zap className="w-4 h-4 text-blue-400" />
+              <span>Tegangan BST</span>
+              <span className="ml-auto flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                <span className="text-emerald-400 text-xs">Live</span>
+              </span>
+            </div>
+            <div className="text-5xl font-bold tabular-nums leading-none" style={{ color: '#378ADD' }}>
+              {data ? Math.round(data.tegangan_bst) : '—'}
+            </div>
+            <div className={`text-sm ${subText} mt-1`}>mV · {clock}</div>
+            <div className="mt-4">
+              <div className={`h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-slate-700' : 'bg-gray-200'}`}>
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${teganganPct}%`, background: '#378ADD' }} />
               </div>
-              <div className="text-8xl font-black tabular-nums drop-shadow-lg leading-none">
-                {data?.tegangan_bst ?? '—'}
-              </div>
-              <div className="text-2xl font-bold text-blue-100 mt-1">mV</div>
-              <div className="mt-4 flex items-center gap-2 text-blue-100 text-sm">
-                <Clock className="w-4 h-4" />
-                <span>{clock}</span>
+              <div className={`flex justify-between text-xs mt-1 ${subText}`}>
+                <span>Min {minTegangan !== null ? minTegangan : teganganRangeMin} mV</span>
+                <span>Max {maxTegangan !== null ? maxTegangan : teganganRangeMax} mV</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4 md:text-right">
-              <div className={`rounded-2xl p-4 ${darkMode ? 'bg-black/20' : 'bg-white/20'} backdrop-blur`}>
-                <p className="text-blue-100 text-xs uppercase tracking-wider mb-1">ADC ADS1115</p>
-                <p className="text-3xl font-bold tabular-nums">{data?.adc_ads1115 ?? '—'}</p>
+          </div>
+
+          <div className={`${cardBg} border-l-4 border-l-emerald-500 border-t border-r border-b rounded-r-2xl rounded-l-none p-6`}>
+            <div className={`flex items-center gap-2 text-xs uppercase tracking-wider ${subText} mb-3`}>
+              <Lightbulb className="w-4 h-4 text-emerald-400" />
+              <span>Intensitas Cahaya</span>
+            </div>
+            <div className="text-5xl font-bold tabular-nums leading-none text-emerald-400">
+              {data ? Math.round(data.lux_bh1750) : '—'}
+            </div>
+            <div className={`text-sm ${subText} mt-1`}>lux</div>
+            <div className="mt-4">
+              <div className={`h-1.5 rounded-full overflow-hidden ${darkMode ? 'bg-slate-700' : 'bg-gray-200'}`}>
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${luxPct}%`, background: '#10b981' }} />
               </div>
-              <div className={`rounded-2xl p-4 ${darkMode ? 'bg-black/20' : 'bg-white/20'} backdrop-blur`}>
-                <p className="text-blue-100 text-xs uppercase tracking-wider mb-1">Lux BH1750</p>
-                <p className="text-3xl font-bold tabular-nums">{data?.lux_bh1750 ?? '—'}</p>
-                <p className="text-blue-100 text-xs">lx</p>
-              </div>
-              <div className={`col-span-2 rounded-2xl p-4 ${darkMode ? 'bg-black/20' : 'bg-white/20'} backdrop-blur`}>
-                <p className="text-blue-100 text-xs uppercase tracking-wider mb-1">Status Cahaya</p>
-                <p className="text-2xl font-bold">{statusIcon} {data?.status_cahaya ?? 'Menunggu...'}</p>
+              <div className={`flex justify-between text-xs mt-1 ${subText}`}>
+                <span>0 lx</span>
+                <span>{luxRangeMax} lx</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ═══ CHART GABUNGAN ═══ */}
+        {/* STATUS PANEL */}
+        <div className={`${cardBg} border rounded-2xl p-4`}>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex items-center gap-3 flex-1">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${isTerangNow ? 'bg-yellow-400/15' : darkMode ? 'bg-slate-700' : 'bg-gray-100'}`}>
+                {statusIcon}
+              </div>
+              <div>
+                <div className={`text-xs ${subText} uppercase tracking-wider`}>Status cahaya</div>
+                <div className="font-semibold text-sm">{data?.status_cahaya ?? 'Menunggu...'}</div>
+              </div>
+            </div>
+            <div className={`hidden sm:block w-px ${darkMode ? 'bg-slate-700' : 'bg-gray-200'}`} />
+            <div className="flex items-center gap-3 flex-1">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-blue-500/15' : 'bg-blue-50'}`}>
+                <Activity className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <div className={`text-xs ${subText} uppercase tracking-wider`}>Data tersimpan</div>
+                <div className="font-semibold text-sm">{history.length} entri</div>
+              </div>
+            </div>
+            <div className={`hidden sm:block w-px ${darkMode ? 'bg-slate-700' : 'bg-gray-200'}`} />
+            <div className="flex items-center gap-3 flex-1">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${darkMode ? 'bg-slate-700' : 'bg-gray-100'}`}>
+                <Zap className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <div className={`text-xs ${subText} uppercase tracking-wider`}>Min / Maks sesi ini</div>
+                <div className="font-semibold text-sm">
+                  {minTegangan !== null ? `${minTegangan} / ${maxTegangan} mV` : '— mV'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* CHART */}
         <div className={`${cardBg} border rounded-2xl shadow-lg p-5`}>
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -361,7 +404,7 @@ export default function App() {
                 <span className="w-3 h-3 rounded-full bg-emerald-400 inline-block" /> Lux (lx)
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full bg-amber-400 inline-block" /> Tegangan (mV)
+                <span className="w-3 h-3 rounded-full bg-blue-400 inline-block" /> Tegangan (mV)
               </span>
             </div>
           </div>
@@ -370,9 +413,9 @@ export default function App() {
           </div>
         </div>
 
-        {/* ═══ RIWAYAT DATA ═══ */}
+        {/* RIWAYAT DATA */}
         <div className={`${cardBg} border rounded-2xl shadow-lg overflow-hidden`}>
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+          <div className={`flex items-center justify-between px-5 py-4 border-b ${darkMode ? 'border-slate-800' : 'border-gray-200'}`}>
             <div>
               <h2 className="text-lg font-bold">📋 Riwayat Data Sensor</h2>
               <p className={`${subText} text-xs mt-0.5`}>{history.length} entri tersimpan</p>
@@ -400,7 +443,6 @@ export default function App() {
                     <th className="px-4 py-3 text-left">Status Cahaya</th>
                     <th className="px-4 py-3 text-right">Lux (lx)</th>
                     <th className="px-4 py-3 text-right">Tegangan BST (mV)</th>
-                    <th className="px-4 py-3 text-right">ADC ADS1115</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -419,15 +461,12 @@ export default function App() {
                         <td className="px-4 py-2.5 font-mono text-xs">{h.timestampFull}</td>
                         <td className="px-4 py-2.5">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-                            ${isTerang
-                              ? 'bg-yellow-400/15 text-yellow-400'
-                              : 'bg-slate-700/50 text-slate-300'}`}>
+                            ${isTerang ? 'bg-yellow-400/15 text-yellow-400' : 'bg-slate-700/50 text-slate-300'}`}>
                             {isTerang ? '☀️' : '🌑'} {h.status_cahaya}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-emerald-400 font-semibold">{h.lux_bh1750}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-amber-400 font-bold">{h.tegangan_bst}</td>
-                        <td className={`px-4 py-2.5 text-right font-mono ${subText}`}>{h.adc_ads1115}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-emerald-400 font-semibold">{Math.round(h.lux_bh1750)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-blue-400 font-bold">{Math.round(h.tegangan_bst)}</td>
                       </tr>
                     );
                   })}
@@ -438,7 +477,6 @@ export default function App() {
         </div>
 
       </main>
-
     </div>
   );
 }
